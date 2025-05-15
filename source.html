@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fluid Simulation Game</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #000;
+            font-family: 'Orbitron', 'Segoe UI', sans-serif;
+        }
+        #canvas-container {
+            width: 100%;
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: center;
+            position: relative;
+        }
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #00f7ff;
+            z-index: 100;
+            pointer-events: none;
+        }
+        #start-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background-color: rgba(0, 0, 0, 0.8);
+            color: #00f7ff;
+            z-index: 200;
+        }
+        #start-screen h1 {
+            font-size: 3rem;
+            margin-bottom: 2rem;
+            text-shadow: 0 0 10px #00f7ff;
+        }
+        #start-screen p {
+            font-size: 1.2rem;
+            margin-bottom: 2rem;
+            text-align: center;
+            max-width: 600px;
+        }
+        #start-button {
+            padding: 15px 30px;
+            background: transparent;
+            color: #00f7ff;
+            border: 2px solid #00f7ff;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.2rem;
+            cursor: pointer;
+            pointer-events: auto;
+            transition: all 0.3s;
+        }
+        #start-button:hover {
+            background: rgba(0, 247, 255, 0.2);
+            box-shadow: 0 0 15px #00f7ff;
+        }
+        #pause-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: #00f7ff;
+            z-index: 150;
+        }
+        #pause-screen h2 {
+            font-size: 3rem;
+            margin-bottom: 2rem;
+            text-shadow: 0 0 10px #00f7ff;
+        }
+    </style>
+
+<base target="_self">
+
+
+    <div id="canvas-container"></div>
+    <div id="ui">
+        <div id="score">Score: 0</div>
+        <div id="energy">Energy: 100%</div>
+    </div>
+    <div id="start-screen">
+        <h1>FLUID SIMULATION</h1>
+        <p>Interact with the glowing fluid using your mouse. Collect energy particles to increase your score. Avoid obstacles that drain your energy.</p>
+        <button id="start-button">START SIMULATION</button>
+    </div>
+    <div id="pause-screen">
+        <h2>PAUSED</h2>
+        <p>Press ESC to resume</p>
+    </div>
+
+    <script>
+        let fluid = [];
+        let particles = [];
+        let obstacles = [];
+        let score = 0;
+        let energy = 100;
+        let gameState = 'start';
+        let cols, rows;
+        let resolution = 20;
+        let lastUpdateTime = 0;
+        let deltaTime = 0;
+        let gridWidth, gridHeight;
+
+        function setup() {
+            let canvas = createCanvas(windowWidth, windowHeight);
+            canvas.parent('canvas-container');
+            
+            colorMode(HSB, 360, 100, 100, 1);
+            noStroke();
+            
+            cols = floor(width / resolution);
+            rows = floor(height / resolution);
+            gridWidth = width / cols;
+            gridHeight = height / rows;
+            
+            // Initialize fluid grid
+            for (let i = 0; i < cols; i++) {
+                fluid[i] = [];
+                for (let j = 0; j < rows; j++) {
+                    fluid[i][j] = {
+                        vx: 0,
+                        vy: 0,
+                        pressure: 0,
+                        density: 0,
+                        hue: 180 + random(-20, 20)
+                    };
+                }
+            }
+            
+            // Create initial particles
+            for (let i = 0; i < 50; i++) {
+                particles.push(createParticle());
+            }
+            
+            // Create obstacles
+            for (let i = 0; i < 10; i++) {
+                obstacles.push({
+                    x: random(width),
+                    y: random(height),
+                    r: random(30, 80),
+                    hue: random(270, 300)
+                });
+            }
+            
+            document.getElementById('start-button').addEventListener('click', startGame);
+        }
+
+        function startGame() {
+            gameState = 'playing';
+            document.getElementById('start-screen').style.display = 'none';
+            loop();
+        }
+
+        function togglePause() {
+            if (gameState === 'playing') {
+                gameState = 'paused';
+                document.getElementById('pause-screen').style.display = 'flex';
+                noLoop();
+            } else if (gameState === 'paused') {
+                gameState = 'playing';
+                document.getElementById('pause-screen').style.display = 'none';
+                loop();
+            }
+        }
+
+        function windowResized() {
+            resizeCanvas(windowWidth, windowHeight);
+            cols = floor(width / resolution);
+            rows = floor(height / resolution);
+            gridWidth = width / cols;
+            gridHeight = height / rows;
+            
+            // Reinitialize fluid grid
+            fluid = [];
+            for (let i = 0; i < cols; i++) {
+                fluid[i] = [];
+                for (let j = 0; j < rows; j++) {
+                    fluid[i][j] = {
+                        vx: 0,
+                        vy: 0,
+                        pressure: 0,
+                        density: 0,
+                        hue: 180 + random(-20, 20)
+                    };
+                }
+            }
+        }
+
+        function createParticle() {
+            return {
+                x: random(width),
+                y: random(height),
+                vx: random(-1, 1),
+                vy: random(-1, 1),
+                r: random(5, 15),
+                hue: random(160, 200),
+                energy: random(5, 20)
+            };
+        }
+
+        function updateFluid() {
+            // Apply mouse influence
+            if (mouseIsPressed && mouseX > 0 && mouseX < width && mouseY > 0 && mouseY < height) {
+                const i = floor(mouseX / gridWidth);
+                const j = floor(mouseY / gridHeight);
+                
+                if (i >= 0 && i < cols && j >= 0 && j < rows) {
+                    const force = 0.5;
+                    fluid[i][j].vx += (mouseX - pmouseX) * force;
+                    fluid[i][j].vy += (mouseY - pmouseY) * force;
+                    fluid[i][j].density = 100;
+                    fluid[i][j].hue = 190 + random(-10, 10);
+                }
+            }
+            
+            // Update fluid simulation
+            for (let i = 0; i < cols; i++) {
+                for (let j = 0; j < rows; j++) {
+                    // Viscosity
+                    fluid[i][j].vx *= 0.98;
+                    fluid[i][j].vy *= 0.98;
+                    
+                    // Pressure
+                    if (i > 0 && i < cols - 1 && j > 0 && j < rows - 1) {
+                        const pressure = (fluid[i-1][j].density + fluid[i+1][j].density + 
+                                         fluid[i][j-1].density + fluid[i][j+1].density) / 4 - fluid[i][j].density;
+                        fluid[i][j].pressure = pressure * 0.1;
+                        fluid[i][j].vx += (fluid[i-1][j].pressure - fluid[i+1][j].pressure) * 0.5;
+                        fluid[i][j].vy += (fluid[i][j-1].pressure - fluid[i][j+1].pressure) * 0.5;
+                    }
+                    
+                    // Density diffusion
+                    fluid[i][j].density *= 0.95;
+                }
+            }
+        }
+
+        function updateParticles() {
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                
+                // Get fluid velocity at particle position
+                const fi = floor(p.x / gridWidth);
+                const fj = floor(p.y / gridHeight);
+                
+                if (fi >= 0 && fi < cols && fj >= 0 && fj < rows) {
+                    p.vx += fluid[fi][fj].vx * 0.1;
+                    p.vy += fluid[fi][fj].vy * 0.1;
+                }
+                
+                // Update position
+                p.x += p.vx;
+                p.y += p.vy;
+                
+                // Bounce off edges
+                if (p.x < 0 || p.x > width) p.vx *= -0.8;
+                if (p.y < 0 || p.y > height) p.vy *= -0.8;
+                
+                // Constrain to canvas
+                p.x = constrain(p.x, 0, width);
+                p.y = constrain(p.y, 0, height);
+                
+                // Check collision with mouse
+                if (dist(p.x, p.y, mouseX, mouseY) < p.r + 20 && mouseIsPressed) {
+                    score += p.energy;
+                    energy = constrain(energy + 2, 0, 100);
+                    particles.splice(i, 1);
+                    particles.push(createParticle());
+                }
+            }
+            
+            // Check if we need more particles
+            if (particles.length < 30 && random() < 0.02) {
+                particles.push(createParticle());
+            }
+        }
+
+        function updateObstacles() {
+            for (let obs of obstacles) {
+                // Check collision with mouse
+                if (dist(obs.x, obs.y, mouseX, mouseY) < obs.r + 20) {
+                    energy -= 0.5;
+                    if (energy <= 0) {
+                        gameState = 'gameover';
+                        document.getElementById('start-screen').style.display = 'flex';
+                        document.getElementById('start-screen').querySelector('h1').textContent = 'GAME OVER';
+                        document.getElementById('start-screen').querySelector('p').textContent = `Your score: ${score}`;
+                        document.getElementById('start-button').textContent = 'TRY AGAIN';
+                        score = 0;
+                        energy = 100;
+                        noLoop();
+                    }
+                }
+            }
+        }
+
+        function draw() {
+            const currentTime = millis();
+            deltaTime = (currentTime - lastUpdateTime) / 1000;
+            lastUpdateTime = currentTime;
+            
+            if (gameState !== 'playing') return;
+            
+            // Update game state
+            updateFluid();
+            updateParticles();
+            updateObstacles();
+            
+            // Slowly drain energy
+            energy = constrain(energy - 0.02, 0, 100);
+            
+            // Update UI
+            document.getElementById('score').textContent = `Score: ${floor(score)}`;
+            document.getElementById('energy').textContent = `Energy: ${floor(energy)}%`;
+            
+            // Draw background
+            background(0, 0, 10);
+            
+            // Draw fluid
+            for (let i = 0; i < cols; i++) {
+                for (let j = 0; j < rows; j++) {
+                    const f = fluid[i][j];
+                    const x = i * gridWidth;
+                    const y = j * gridHeight;
+                    
+                    const alpha = map(f.density, 0, 100, 0, 0.3);
+                    fill(f.hue, 80, 80, alpha);
+                    rect(x, y, gridWidth, gridHeight);
+                }
+            }
+            
+            // Draw particles
+            for (let p of particles) {
+                fill(p.hue, 80, 90);
+                circle(p.x, p.y, p.r * 2);
+                
+                // Glow effect
+                for (let i = 1; i <= 3; i++) {
+                    fill(p.hue, 60, 90, 0.3 / i);
+                    circle(p.x, p.y, p.r * 2 * i);
+                }
+            }
+            
+            // Draw obstacles
+            for (let obs of obstacles) {
+                fill(obs.hue, 60, 60, 0.5);
+                circle(obs.x, obs.y, obs.r * 2);
+                
+                // Pulsing effect
+                const pulse = sin(frameCount * 0.05) * 5;
+                fill(obs.hue, 80, 80, 0.2);
+                circle(obs.x, obs.y, obs.r * 2 + pulse);
+            }
+            
+            // Draw mouse influence
+            if (mouseIsPressed) {
+                fill(190, 100, 100, 0.3);
+                circle(mouseX, mouseY, 80);
+            }
+        }
+
+        function keyPressed() {
+            if (keyCode === ESCAPE) {
+                togglePause();
+                return false; // Prevent default behavior
+            }
+        }
+
+        function mousePressed() {
+            if (gameState === 'start') {
+                startGame();
+            }
+        }
+    </script>
+
+              
+          
+                
+          
+              
